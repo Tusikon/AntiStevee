@@ -1,4 +1,4 @@
-#define PIR_PIN  7
+#define PIR_PIN  8
 #define SOUND_PIN A0
 #define PUMP_PIN 13
 
@@ -6,11 +6,12 @@
 #define SOUND_ENABLE 0
 #define PUMP_ENABLE 1
 
-#define PUMP_DURATION 500 //in milli
-#define PUMP_DOWNTIME 1000 //in milli
+#define PUMP_DURATION 500  // in milli
+#define PUMP_DOWNTIME 1000 // in milli
 
-#define SOUND_TIMEOUT 2000 //in milli
-#define PIR_TIMEOUT 300000 //in milli
+#define SOUND_TIMEOUT 2000 // in milli
+#define PIR_STANDBY 20000  // in milli
+#define PIR_STARTUP 60000  // in milli
 
 class Runnable {
     static Runnable *headRunnable;
@@ -43,14 +44,15 @@ class PassiveIR: public Runnable {
     const byte inPin;
     const boolean enable;
 
+    boolean initiated;
     unsigned long insideMs;
-    
+    unsigned long startMs;
+
     enum State {
-        OUTSIDE = 0,
-        INSIDE_PENDING = 1,
-        INSIDE = 2,
-        OUTSIDE_PENDING = 3,
-      } state;
+        WAIT = 0,
+        TRIGD = 1,
+        STANDBY = 2
+        } state;
     
   public:
     boolean statusOut;
@@ -64,35 +66,41 @@ class PassiveIR: public Runnable {
     void setup() {
       pinMode(inPin, INPUT);
 
+      state = WAIT;
+      initiated = false;
+      startMs = millis();
       statusOut = false ;
     }
 
     void loop() {
-      if (enable)
+      if (enable) 
         {
-          switch (state)
+          if (!initiated)
           {
-            case OUTSIDE:
-              if (digitalRead(inPin))
-                state = INSIDE_PENDING;
-              break;
-            case INSIDE_PENDING:
-              if (!digitalRead(inPin))
-              {
-                state = INSIDE;
-                insideMs = millis();
-              }
-              break;
-            case INSIDE:
-              statusOut = true;
-              if (digitalRead(inPin) || (millis() - insideMs) > PIR_TIMEOUT)
-                state = OUTSIDE_PENDING; 
-            break;
-            case OUTSIDE_PENDING:
-                statusOut = false;
+            if   ((millis() - startMs) > PIR_STARTUP)
+              initiated = true;
+          }
+          else
+          {
+            switch (state)
+            {
+              case WAIT:
+                if (digitalRead(inPin))
+                  state = TRIGD;
+                break;
+              case TRIGD:
                 if (!digitalRead(inPin))
-                  state = OUTSIDE;
-            break;
+                {
+                  state = STANDBY;
+                  insideMs = millis();
+                  statusOut = true;
+                }
+                break;
+              case STANDBY:
+                if ((millis() - insideMs) > PIR_STANDBY)
+                  state = WAIT; 
+              break;
+            }
           }
         }
       else
